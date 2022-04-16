@@ -1,63 +1,111 @@
-# Install and load packages
+### RNAseq using Deseq2 and Functional enrichment Analysis ####
+### Dr. Amarinder Singh Thind and Simarpreet Kaur
+### Date : 18-19 April, 2022
 
-if (!requireNamespace("BiocManager", quietly = TRUE)) install.packages("BiocManager")
-BiocManager::install("DESeq2")
-BiocManager::install("edgeR")
-BiocManager::install("biomaRt")
-BiocManager::install('PCAtools')
-BiocManager::install('EnhancedVolcano')
+##### Install packages, if not done before 
+
+# if (!requireNamespace("BiocManager", quietly = TRUE)) install.packages("BiocManager")
+# BiocManager::install("DESeq2")
+# BiocManager::install("biomaRt")
+# BiocManager::install('PCAtools')
+# BiocManager::install('EnhancedVolcano')
 
 ###################### load the raw count matrix #######################
 
 setwd("./") #Path_to_working_directory
 
-rawcount<-read.table ("RawGeneCounts.tsv",header=TRUE,  sep="\t",  row.names=1)
+rawcount<-read.table ("RawCount_input.csv",header=TRUE,  sep=",",  row.names=1)
 
-######################  Filter for coding genes (In case want to filter non-coding Genes) ########################
-library("biomaRt")
+## Replace NAs by zero and 
+rawcount <- round(rawcount) 
+rawcount[is.na(rawcount)] <- 0
 
-mart <- useMart(biomart="ensembl", dataset="hsapiens_gene_ensembl")
-all_coding_genes <- getBM(attributes = c( "hgnc_symbol"), filters = c("biotype"), values = list(biotype="protein_coding"), mart = mart)
-rawcount <- rawcount[row.names(rawcount) %in%  all_coding_genes$hgnc_symbol,]
 
 ###################### Data annotation  #################################
 
-anno <-read.table ("Annotation_of_samples.csv",header=TRUE,  sep=",") ##In this case Two coulmns (a) sample (b) Condition
-rownames(anno) <- anno$sample
+anno <-read.table ("Annotation_of_samples_12_Samples_ALL.csv",header=TRUE,  sep=",", row.names = 1) ##In this case we have 3 coulmns (a) sample (b) Condition (c) batch
+#rownames(anno) <- anno$sample  ##add rownames as sample name (if not already), because pca function check rownames of anno == col of data matrix
 
+##############################################################
+############ PCA plot for pre DE investigation ##############
+
+
+library(PCAtools)
+
+anno <- anno[match(colnames(rawcount), anno$Sample),] ## reordering anno row with colnmaes of rawcount
+lograwcount <- as.matrix(log2(rawcount +1))  ## log transformation of rawcount for PCA plot 
+
+ top1000.order <- head(order(matrixStats::rowVars(lograwcount), decreasing = TRUE), 1000)
+  p <- PCAtools::pca(mat = lograwcount[top1000.order,], metadata = anno, removeVar = 0.01)
+
+  biplot(p,
+       lab = paste0(p$metadata$Sample),
+        colby = 'Batch',  #Sample #Batch #Condition #sex
+        hline = 0, vline = 0,
+        legendPosition = 'right',
+         encircle = T )
+
+
+##############################################################
+################# Lets check combat normalization ############
+############## SVA #####################
+  
+  #BiocManager::install("sva")
+  
+  
+  library('sva')
+  rawcount <- as.matrix(rawcount)
+  adjusted_counts <- ComBat_seq(rawcount, batch=anno$Batch, group=anno$Condition) ##In ComBat-seq, user may specify biological covariates, whose signals will be preserved in the adjusted data. I
+  
+  nor_set <- as.matrix(log2(adjusted_counts+1)) ## log transformation of adjusted count
+  top1000.order <- head(order(matrixStats::rowVars(nor_set), decreasing = TRUE), 1000)
+  pp <- PCAtools::pca(mat =nor_set[top1000.order,] , metadata = anno, removeVar = 0.01)
+  biplot(pp,
+          lab = paste0(p$metadata$Sample),
+          #colby = 'Batch',   #Batch_log', #Condition
+          colby = 'Condition',
+          hline = 0, vline = 0,
+          legendPosition = 'right',encircle = T)
+
+   
+
+  ##### Do we suppose to remove any defaulty sample  #########
+   
+   ### subset raw and conditional data for defined pairs
+   ##### Removing sample number 7 ########## 
+   
+   anno <- anno[!(anno$Sample == 'sample_7'),]
+   rawcount <- rawcount[,names(rawcount) %in% anno$Sample]
+    
+   ### Go back to PCA plot and check what happned  and perform combat normalization again after removal of sample
+   
 # Define conditions (for contrast) that you want to compare if you have more than one #control #case
 # This is pair-wise comparison, so only consider one pair at one time
 
-firstC<-"case1"       #case1 #case2 #case3 etc          
-SecondC <-"Control"     
+firstC<-"Condition_A"       #case1 #case2 #case3 etc          
+SecondC <-"Condition_B"     
 p.threshold <- 0.05   ##define threshold for filtering
 
-### subset raw and conditional data for defined pairs
 
-anno <- anno[(anno$Condition ==firstC |anno$Condition ==SecondC),]
-
-anno <- anno[anno$sample %in% names(rawcount),]
-rawcount <- rawcount[,names(rawcount) %in% anno$sample]
 
 ############################### Create DESeq2 datasets #############################
 library(DESeq2)
 
-dds <- DESeqDataSetFromMatrix(countData = rawcount, colData = anno, design = ~Condition )
+## dds <- DESeqDataSetFromMatrix(countData = rawcount, colData = anno, design = ~Condition )   ##rawcount
+## dds <- DESeqDataSetFromMatrix(countData = rawcount, colData = anno, design =  ~Batch+Condition )  ###USE this one if you have extra col in anno data with Batch info
+dds = DESeq2::DESeqDataSetFromMatrix(countData = adjusted_counts, colData = anno, design = ~ Condition)  ##https://github.com/zhangyuqing/ComBat-seq/issues/7
 
-##dds <- DESeqDataSetFromMatrix(countData = rawcount, colData = anno, design =  ~Batch+Condition )  ###USE this one if you have extra col in anno data with Batch info
+##When considering batch effects in group design, it takes into account the mean differences across batch, 
+##not necessarily the variance differences. ComBat-Seq is designed to address both mean and variance batch effects.
+###In theory, no, you do not need to include batch as a covariate any more. However, you can always try both and evaluate the results.
+
+
 #View(counts(dds))
 
 dds <- estimateSizeFactors(dds)
-
-normalized_counts <- counts(dds, normalized=TRUE)  ## However,Deseq2 use raw count #This one is good for visualization purpose
-
-#View(normalized_counts)
-write.table(normalized_counts, file="normalized_counts.txt", sep="\t", quote=F, col.names=NA)
-
-### Transform counts for data visualization
-rld <- rlog(dds, blind=TRUE)
-### Plot PCA 
-plotPCA(rld, intgroup="Condition")
+normalized_counts <- counts(dds, normalized=TRUE)  ## extract normalization count after executing Deseq2 for visualization purpose
+vst <- vst(dds, blind=TRUE)  ### Transform counts for data visualization #options (1) vst (2) rld
+plotPCA(vst, intgroup="Condition")  ### Plot PCA 
 
 ## Run DESEQ2
 dds <- DESeq(dds)
@@ -70,8 +118,9 @@ plotDispEsts(dds)
 #In case of multiple comparisons ## we need to change the contrast for every comparision
 contrast<- c("Condition",firstC,SecondC)
 
-res <- results(dds, contrast=contrast)
-print(res)
+res <- results(dds, contrast=contrast)  ## extract result dataframe 
+View(as.data.frame(res))
+
 ### Valcono plot
 library(EnhancedVolcano)
 
@@ -87,14 +136,14 @@ nam <- paste('down_in',firstC, sep = '_')
 #res$nam <- as.logical(res$log2FoldChange < 0)
 res[, nam] <- as.logical(res$log2FoldChange < 0)
 
-genes.deseq <- row.names(res)[which(res$threshold)]
+genes.deseq <- row.names(res)[which(res$threshold)]   ### list of gene with Padjust < defined threshold
 genes_deseq2_sig <- res[which(res$threshold),]
 
 
 ########### Plots normalized count of top 20 genes ## sorted based on padjust and filter by |logFC| >=1
 
 res$gene <- row.names(res)
-print(res)
+View(as.data.frame(res))
 
 # Order results by padj values
 
@@ -156,36 +205,56 @@ pheatmap(top20_norm_v2 ,
          fontsize_row = 10, 
          height = 20)
 
-### Add EntrezID column to results dataframe for easier downstream processing ####
 
-genes.deseq.entrezid <- getBM(attributes = c("hgnc_symbol", "entrezgene_id"), filters = "hgnc_symbol", values = row.names(res), mart = mart)
-entrez_df = as.data.frame(genes.deseq.entrezid)
 
-res_df = as.data.frame(res)
-res_df$hgnc_symbol = row.names(res_df)
-row.names(res_df) <- NULL
+file <- paste('Deseq2_',firstC,'_v_',SecondC,'_results_significant_padj',p.threshold,'.csv',sep = '') 
+all_results <- paste('Deseq2_',firstC,'_v_',SecondC,'_all_results.csv',sep = '')
 
-merged = merge(res_df, entrez_df)
-print(merged)
+write.table(genes_deseq2_sig,all_results,sep = ",")  ## no LogFC threshold
 
+
+#############################################
 genes_deseq2_sig_df = as.data.frame(genes_deseq2_sig)
 genes_deseq2_sig_df$hgnc_symbol = row.names(genes_deseq2_sig_df)
 row.names(genes_deseq2_sig_df) <- NULL
-
 sig_merged = merge(genes_deseq2_sig_df, entrez_df)
 
-file <- paste('Deseq2_',firstC,'_v_',SecondC,'_results_significant_padj',p.threshold,'.csv',sep = '')
-all_results <- paste('Deseq2_',firstC,'_v_',SecondC,'_all_results.csv',sep = '')
+######################  Filter for coding genes (In case want to filter non-coding Genes) ########################
+library("biomaRt")
 
-write.table(sig_merged,file,sep = ",")
-write.table(merged,all_results,sep = ",")
+#new_config <- httr::config(ssl_verifypeer = FALSE) ############For certificate error
+#httr::set_config(new_config, override = FALSE)     ############For certificate error
+
+### define the mart for h_sapiens
+
+#ensembl_mart <- useMart(biomart="ensembl", dataset="hsapiens_gene_ensembl")  ## either this or following line
+ensembl_mart <- useEnsembl(biomart = "ensembl", dataset = "hsapiens_gene_ensembl", mirror = "asia")
+
+#all_genes <- getBM(attributes = c( "hgnc_symbol","ensembl_gene_id","ensembl_gene_id_version"),  mart =ensembl_mart)  ## etract df of verious types of ID
+
+#############################################################3
+
+### Add EntrezID column to results dataframe for easier downstream processing ####
+genes_deseq2_sig <- as.data.frame(genes_deseq2_sig)
+genes_deseq2_sig$hgnc_symbol = row.names(genes_deseq2_sig)  ## significant gene table from previous DE analysis
+row.names(genes_deseq2_sig) <- NULL 
+
+
+genes.deseq.entrezid <- getBM(attributes = c("hgnc_symbol", "entrezgene_id"), filters = "hgnc_symbol", values = genes_deseq2_sig$hgnc_symbol, mart = ensembl_mart)
+#genes.deseq.entrezid = as.data.frame(genes.deseq.entrezid) ## if not
+
+merged <- merge(genes_deseq2_sig, genes.deseq.entrezid, by.x= "hgnc_symbol", by.y="hgnc_symbol")
+
+##### You may want to filter genes based on LOGFC threshold
+
+merged <- merged[(merged$log2FoldChange >=1 | merged$log2FoldChange <= -1),]
 
 
 ######### Rank all genes based on their fold change #########
 
-BiocManager::install("clusterProfiler", force = TRUE)
-BiocManager::install("pathview", force = TRUE)
-BiocManager::install("enrichplot", force = TRUE)
+#BiocManager::install("clusterProfiler", force = TRUE)
+#BiocManager::install("pathview", force = TRUE)
+#BiocManager::install("enrichplot", force = TRUE)
 
 library(clusterProfiler)
 library(enrichplot)
@@ -194,15 +263,16 @@ library(ggplot2)
 # SET THE DESIRED ORGANISM HERE
 organism = "org.Hs.eg.db"
 
-BiocManager::install(organism, character.only = TRUE, force = TRUE)
+#BiocManager::install(organism, character.only = TRUE, force = TRUE)
+
 library(organism, character.only = TRUE)
 keytypes(org.Hs.eg.db)
 #We will take the log2FoldChange value from previously saved significant results file
 #Deseq2_case1_v_Control_results_significant.csv
 
-# reading in data from deseq2
-df <- read.csv("Deseq2_case1_v_Control_results_significant_padj0.05.csv")
-df
+ @simarpreet   ??? where is this file ## Should be replaced by merged df     # reading in data from deseq2   
+          df <- read.csv("Deseq2_case1_v_Control_results_significant_padj0.05.csv") 
+        df <- merged
  
 #https://learn.gencore.bio.nyu.edu/rna-seq-analysis/gene-set-enrichment-analysis/
 
@@ -398,25 +468,5 @@ hsa04110 <- pathview(gene.data  = geneList,
                      pathway.id = "hsa04110",
                      species    = "hsa",
                      limit      = list(gene=max(abs(geneList)), cpd=1))
-
-
-
-  
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
