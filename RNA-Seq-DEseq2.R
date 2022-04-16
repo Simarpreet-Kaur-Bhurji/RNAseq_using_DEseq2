@@ -216,12 +216,6 @@ all_results <- paste('Deseq2_',firstC,'_v_',SecondC,'_all_results.csv',sep = '')
 write.table(genes_deseq2_sig,all_results,sep = ",")  ## no LogFC threshold
 
 
-# #############################################
-# genes_deseq2_sig_df = as.data.frame(genes_deseq2_sig)
-# genes_deseq2_sig_df$hgnc_symbol = row.names(genes_deseq2_sig_df)
-# row.names(genes_deseq2_sig_df) <- NULL
-# sig_merged = merge(genes_deseq2_sig_df, entrez_df)
-
 ######################  Filter for coding genes (In case want to filter non-coding Genes) ########################
 library("biomaRt")
 
