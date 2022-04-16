@@ -1,7 +1,18 @@
-### RNAseq using Deseq2 and Functional enrichment Analysis ####
-### Dr. Amarinder Singh Thind and Simarpreet Kaur
-### Date : 18-19 April, 2022
+---
+title: "RNAseq using Deseq2 and Functional enrichment Analysis"
+output: html_document
+date: '2022-04-16'
+---
 
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+##RNAseq using Deseq2 and Functional enrichment Analysis\
+Dr. Amarinder Singh Thind and Simarpreet Kaur\
+Date : 18-19 April, 2022\
+
+```{r}
 ##### Install packages, if not done before 
 
 # if (!requireNamespace("BiocManager", quietly = TRUE)) install.packages("BiocManager")
@@ -9,24 +20,33 @@
 # BiocManager::install("biomaRt")
 # BiocManager::install('PCAtools')
 # BiocManager::install('EnhancedVolcano')
+```
 
+
+```{r}
 ###################### load the raw count matrix #######################
 
 #setwd("/Users/athind/Dropbox/RNAseq_using_DEseq2-april16/") #Path_to_working_directory
 
+setwd("./")
 rawcount<-read.table ("RawCount_input.csv",header=TRUE,  sep=",",  row.names=1)
 
 ## Replace NAs by zero and 
 rawcount <- round(rawcount) 
 rawcount[is.na(rawcount)] <- 0
+```
 
-
+```{r}
 ###################### Data annotation  #################################
 
 anno <-read.table ("Annotation_of_samples_12_Samples_ALL.csv",header=TRUE,  sep=",", row.names = 1) ##In this case we have 3 coulmns (a) sample (b) Condition (c) batch
 #rownames(anno) <- anno$sample  ##add rownames as sample name (if not already), because pca function check rownames of anno == col of data matrix
 
 ##############################################################
+```
+
+### PCA plot for pre DE investigation
+```{r}
 ############ PCA plot for pre DE investigation ##############
 
 
@@ -44,12 +64,15 @@ biplot(p,lab = paste0(p$metadata$Sample),
         legendPosition = 'right',
         encircle = T )
 
+```
 
+### Lets check combat normalization
+```{r}
 ##############################################################
 ################# Lets check combat normalization ############
 ############## SVA #####################
   
-#BiocManager::install("sva")
+  #BiocManager::install("sva")
   
 library('sva')
 rawcount <- as.matrix(rawcount)
@@ -66,7 +89,9 @@ biplot(pp,
       legendPosition = 'right',encircle = T)
 
    
+```
 
+```{r}
   ##### Do we suppose to remove any defaulty sample  #########
    
    ### subset raw and conditional data for defined pairs
@@ -86,6 +111,10 @@ firstC<-"Condition_A"       #case1 #case2 #case3 etc
 SecondC <-"Condition_B"     
 p.threshold <- 0.05   ##define threshold for filtering
 
+```
+
+### DESeq2 Analysis
+```{r}
 ############################### Create DESeq2 datasets #############################
 library(DESeq2)
 
@@ -98,6 +127,12 @@ dds <- DESeqDataSetFromMatrix(countData = rawcount, colData = anno, design =  ~B
 ###In theory, no, you do not need to include batch as a covariate any more. However, you can always try both and evaluate the results.
 
 
+```
+
+When considering batch effects in group design, it takes into account the mean differences across batch, not necessarily the variance differences. ComBat-Seq is designed to address both mean and variance batch effects.
+In theory, no, you do not need to include batch as a covariate any more. However, you can always try both and evaluate the results.
+
+```{r}
 #View(counts(dds))
 
 dds <- estimateSizeFactors(dds)
@@ -111,6 +146,10 @@ dds <- DESeq(dds)
 ##ensure your data is a good fit for the DESeq2 model
 plotDispEsts(dds)
 
+```
+
+### contrast based  comparison
+```{r}
 ################# contrast based  comparison ##########################
 
 #In case of multiple comparisons ## we need to change the contrast for every comparision
@@ -138,6 +177,10 @@ genes.deseq <- row.names(res)[which(res$threshold)]   ### list of gene with Padj
 genes_deseq2_sig <- res[which(res$threshold),]
 
 
+```
+
+### Plots normalized count of top 20 genes
+```{r}
 ########### Plots normalized count of top 20 genes ## sorted based on padjust and filter by |logFC| >=1
 
 res$gene <- row.names(res)
@@ -165,6 +208,9 @@ top20_norm$gene <-  row.names(top20_norm)
 top20_norm <- top20_norm %>% 
   pivot_longer(!gene, names_to = "samplename", values_to = "normalized_counts") # Gathering the columns to have normalized counts to a single column
 
+```
+
+```{r}
 # Create tibbles including row names
 mov10_meta <- anno %>% 
   rownames_to_column(var="samplename") %>% 
@@ -185,6 +231,9 @@ ggplot(top20_norm) +
   theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
   theme(plot.title = element_text(hjust = 0.5))
 
+```
+
+```{r}
 ##################
 library(RColorBrewer)
 ### Set a color palette
@@ -203,14 +252,48 @@ pheatmap(top20_norm_v2 ,
          fontsize_row = 10, 
          height = 20)
 
-
-
 file <- paste('Deseq2_',firstC,'_v_',SecondC,'_results_significant_padj',p.threshold,'.csv',sep = '') 
 all_results <- paste('Deseq2_',firstC,'_v_',SecondC,'_all_results.csv',sep = '')
 
 write.table(genes_deseq2_sig,all_results,sep = ",")  ## no LogFC threshold
 
+```
 
+```{r}
+library("biomaRt")
+######################  Filter for coding genes (In case want to filter non-coding Genes) ########################
+#new_config <- httr::config(ssl_verifypeer = FALSE) ############For certificate error
+#httr::set_config(new_config, override = FALSE)     ############For certificate error
+
+### define the mart for h_sapiens
+
+#ensembl_mart <- useMart(biomart="ensembl", dataset="hsapiens_gene_ensembl")  ## either this or following line
+ensembl_mart <- useEnsembl(biomart = "ensembl", dataset = "hsapiens_gene_ensembl", mirror = "asia")
+
+#all_genes <- getBM(attributes = c( "hgnc_symbol","ensembl_gene_id","ensembl_gene_id_version"),  mart =ensembl_mart)  ## etract df of verious types of ID
+
+#############################################################3
+
+### Add EntrezID column to results dataframe for easier downstream processing ####
+genes_deseq2_sig <- as.data.frame(genes_deseq2_sig)
+genes_deseq2_sig$hgnc_symbol = row.names(genes_deseq2_sig)  ## significant gene table from previous DE analysis
+row.names(genes_deseq2_sig) <- NULL 
+
+
+genes.deseq.entrezid <- getBM(attributes = c("hgnc_symbol", "entrezgene_id"), filters = "hgnc_symbol", values = genes_deseq2_sig$hgnc_symbol, mart = ensembl_mart)
+#genes.deseq.entrezid = as.data.frame(genes.deseq.entrezid) ## if not
+
+merged <- merge(genes_deseq2_sig, genes.deseq.entrezid, by.x= "hgnc_symbol", by.y="hgnc_symbol")
+
+##### You may want to filter genes based on LOGFC threshold
+
+merged <- merged[(merged$log2FoldChange >=1 | merged$log2FoldChange <= -1),]
+
+
+```
+
+###  Filter for coding genes
+```{r}
 ######################  Filter for coding genes (In case want to filter non-coding Genes) ########################
 library("biomaRt")
 
@@ -240,8 +323,12 @@ merged <- merge(genes_deseq2_sig, genes.deseq.entrezid, by.x= "hgnc_symbol", by.
 ##### You may want to filter genes based on LOGFC threshold
 
 merged <- merged[(merged$log2FoldChange >=1 | merged$log2FoldChange <= -1),]
-print(merged)
 
+
+```
+
+
+```{r}
 ######### Rank all genes based on their fold change #########
 
 #BiocManager::install("clusterProfiler", force = TRUE)
@@ -264,8 +351,8 @@ keytypes(org.Hs.eg.db)
 
  
 df <- read.csv("Deseq2_case1_v_Control_results_significant_padj0.05.csv") 
-#df <- as.data.frame(merged) 
-#print(df)
+#df <- merged
+ 
 # we want the log2 fold change 
 original_gene_list <- df$log2FoldChange
 print(original_gene_list)
@@ -281,6 +368,10 @@ gene_list = sort(gene_list, decreasing = TRUE)
 
 print(gene_list)
 
+```
+
+### Gene Set Enrichment
+```{r}
 #### Gene Set Enrichment #####
 
 library(stats)
@@ -296,15 +387,19 @@ gse <- gseGO(geneList=gene_list,
              pAdjustMethod = "none")
 
 # require(DOSE)
-# dotplot(gse, showCategory=10, split=".sign", orderBy = "X")
-
-### We can see that in our dataset not a single value is enriched at a pvalue cut-off of 0.05.
-
-### Lets exlore other functions with a sample dataset and see what analysis we can do with
-## a list of differentially expressed genes
-###### geneList dataset of DOSE package #######
+dotplot(gse, showCategory=10, split=".sign", orderBy = "X")
 
 
+```
+
+We can see that in our dataset not a single value is enriched at a pvalue cut-off of 0.05.
+
+Lets exlore other functions with a sample dataset and see what analysis we can do with a list of differrentially expressed genes from geneList dataset of DOSE package
+
+##GO Enrichment Analysis of a gene set. 
+Given a vector of genes, enrichGO function will return the enrichment GO categories after FDR control.
+
+```{r}
 ##GO Enrichment Analysis of a gene set. 
 ##Given a vector of genes, enrichGO function will return the 
 ##enrichment GO categories after FDR control.
@@ -341,6 +436,12 @@ emapplot_cluster(ego2)
 ###In the following example, we selected fold change above 1 as the differential genes 
 ##and analyzing their disease association.
 
+```
+
+In the following example, we selected fold change above 1 as the differential genes and analyzing their disease association.
+
+### enrich DO
+```{r}
 #### enrich DO #####
 
 library(ggupset)
@@ -368,7 +469,10 @@ head(X)
 ## Visualization of enrichDO results ##
 barplot(X, showCategory=10)
 dotplot(X)
+```
 
+###Multiple annotation categories
+```{r}
 #gene may belong to multiple annotation categories, 
 #we developed cnetplot function to extract the complex association between genes and diseases
 cnetplot(X, categorySize="pvalue", foldChange=geneList)
@@ -377,7 +481,10 @@ cnetplot(X, categorySize="pvalue", foldChange=geneList)
 #cnetplot for visualizing the complex association between genes and diseases.
 
 upsetplot(X)
+```
 
+###Enrichment Map
+```{r}
 ## Enrichment Map ##
 ###Enrichment map organizes enriched terms into a network with edges 
 ##connecting overlapping gene sets. 
@@ -387,7 +494,10 @@ upsetplot(X)
 X2 <- pairwise_termsim(X)
 emapplot(X2, showCategory = 10, layout = "star")
 
+```
 
+###Enrichment of NCG (Network of Cancer Gene)
+```{r}
 #Network of Cancer Gene (NCG)3 is a manually curated repository of cancer genes. 
 #NCG release 5.0 (Aug. 2015) collects 1,571 cancer genes from 175 published studies. 
 #DOSE supports analyzing gene list and 
@@ -399,6 +509,10 @@ gene2 <- names(geneList)[abs(geneList) < 3]
 ncg <- enrichNCG(gene2)
 head(ncg)
 
+```
+
+###Disease Gene Association
+```{r}
 ##The enrichment analysis of disease-gene associations is supported by the enrichDGN function 
 ##to determine whether the genes have associations with any known diseases 
 #### gene disease association #####
@@ -406,12 +520,19 @@ head(ncg)
 dgn <- enrichDGN(gene)
 head(dgn)
 
+```
+
+### Gene set enrichment analysis 
+```{r}
 ####### Gene set enrichment analysis GSEA Plot ######
 gsecc <- gseGO(geneList=geneList, ont="CC", OrgDb=org.Hs.eg.db, verbose=F)
 head(summary(gsecc))
 gseaplot(gsecc, geneSetID="GO:0000779")
 
+```
 
+### KEGG Enrichment Analysis
+```{r}
 ###### KEGG Enrichment Analysis #######
 
 library(clusterProfiler)
@@ -419,12 +540,17 @@ library(clusterProfiler)
 ## KEGG pathway over-representation analysis
 data(geneList, package="DOSE")
 gene <- names(geneList)[abs(geneList) > 2]
+```
 
+```{r}
 kk <- enrichKEGG(gene         = gene,
                  organism     = 'hsa',
                  pvalueCutoff = 0.05)
 head(kk)
 
+```
+
+```{r}
 ## KEGG module over-representation analysis
 #KEGG Module is a collection of manually defined function units. In some situation,
 #KEGG Modules have a more straightforward interpretation
@@ -433,8 +559,10 @@ mkk <- enrichMKEGG(gene = gene,
                    organism = 'hsa',
                    pvalueCutoff = 1,
                    qvalueCutoff = 1)
-head(mkk)                   
+head(mkk)                
+```
 
+```{r}
 ## KEGG module gene set enrichment analysis ##
 
 mkk2 <- gseMKEGG(geneList = geneList,
@@ -442,7 +570,10 @@ mkk2 <- gseMKEGG(geneList = geneList,
                  pvalueCutoff = 1)
 head(mkk2)
 
+```
 
+### Visualize enriched KEGG pathways
+```{r}
 ####### Visualize enriched KEGG pathways #########
 
 ## To view the KEGG pathway,use the browseKEGG function,
@@ -458,3 +589,5 @@ hsa04110 <- pathview(gene.data  = geneList,
                      pathway.id = "hsa04110",
                      species    = "hsa",
                      limit      = list(gene=max(abs(geneList)), cpd=1))
+```
+Check the image file hsa04110.pathview.png in your working directory, for the KEGG pathway image.
