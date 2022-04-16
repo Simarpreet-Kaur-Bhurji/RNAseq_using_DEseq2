@@ -12,7 +12,7 @@
 
 ###################### load the raw count matrix #######################
 
-setwd("./") #Path_to_working_directory
+setwd("/Users/athind/Dropbox/RNAseq_using_DEseq2-april16/") #Path_to_working_directory
 
 rawcount<-read.table ("RawCount_input.csv",header=TRUE,  sep=",",  row.names=1)
 
@@ -52,7 +52,6 @@ lograwcount <- as.matrix(log2(rawcount +1))  ## log transformation of rawcount f
   
   #BiocManager::install("sva")
   
-  
   library('sva')
   rawcount <- as.matrix(rawcount)
   adjusted_counts <- ComBat_seq(rawcount, batch=anno$Batch, group=anno$Condition) ##In ComBat-seq, user may specify biological covariates, whose signals will be preserved in the adjusted data. I
@@ -74,10 +73,13 @@ lograwcount <- as.matrix(log2(rawcount +1))  ## log transformation of rawcount f
    ### subset raw and conditional data for defined pairs
    ##### Removing sample number 7 ########## 
    
-   anno <- anno[!(anno$Sample == 'sample_7'),]
+    
+   anno <- anno[!(anno$Sample == 'sample_7' | anno$Sample == 'sample_8'),]
+   rawcount <- as.data.frame(rawcount)
    rawcount <- rawcount[,names(rawcount) %in% anno$Sample]
     
-   ### Go back to PCA plot and check what happned  and perform combat normalization again after removal of sample
+   ### Go back to PCA plot and check what happned 
+   ### perform combat normalization again after removal of sample
    
 # Define conditions (for contrast) that you want to compare if you have more than one #control #case
 # This is pair-wise comparison, so only consider one pair at one time
@@ -91,7 +93,8 @@ p.threshold <- 0.05   ##define threshold for filtering
 ############################### Create DESeq2 datasets #############################
 library(DESeq2)
 
-## dds <- DESeqDataSetFromMatrix(countData = rawcount, colData = anno, design = ~Condition )   ##rawcount
+
+##dds <- DESeqDataSetFromMatrix(countData = rawcount, colData = anno, design = ~Condition )   ##rawcount
 ## dds <- DESeqDataSetFromMatrix(countData = rawcount, colData = anno, design =  ~Batch+Condition )  ###USE this one if you have extra col in anno data with Batch info
 dds = DESeq2::DESeqDataSetFromMatrix(countData = adjusted_counts, colData = anno, design = ~ Condition)  ##https://github.com/zhangyuqing/ComBat-seq/issues/7
 
@@ -213,11 +216,11 @@ all_results <- paste('Deseq2_',firstC,'_v_',SecondC,'_all_results.csv',sep = '')
 write.table(genes_deseq2_sig,all_results,sep = ",")  ## no LogFC threshold
 
 
-#############################################
-genes_deseq2_sig_df = as.data.frame(genes_deseq2_sig)
-genes_deseq2_sig_df$hgnc_symbol = row.names(genes_deseq2_sig_df)
-row.names(genes_deseq2_sig_df) <- NULL
-sig_merged = merge(genes_deseq2_sig_df, entrez_df)
+# #############################################
+# genes_deseq2_sig_df = as.data.frame(genes_deseq2_sig)
+# genes_deseq2_sig_df$hgnc_symbol = row.names(genes_deseq2_sig_df)
+# row.names(genes_deseq2_sig_df) <- NULL
+# sig_merged = merge(genes_deseq2_sig_df, entrez_df)
 
 ######################  Filter for coding genes (In case want to filter non-coding Genes) ########################
 library("biomaRt")
@@ -468,5 +471,3 @@ hsa04110 <- pathview(gene.data  = geneList,
                      pathway.id = "hsa04110",
                      species    = "hsa",
                      limit      = list(gene=max(abs(geneList)), cpd=1))
-
-
