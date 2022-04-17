@@ -78,7 +78,10 @@ rawcount <- rawcount[,names(rawcount) %in% anno$Sample]
     
 ### Go back to PCA plot and check what happned 
 ### perform combat normalization again after removal of sample
-   
+rawcount <- as.matrix(rawcount)
+adjusted_counts <- ComBat_seq(rawcount, batch=anno$Batch, group=anno$Condition) ##In ComBat-seq, user may specify biological covariates, whose signals will be preserved in the adjusted data. I
+  
+
 # Define conditions (for contrast) that you want to compare if you have more than one #control #case
 # This is pair-wise comparison, so only consider one pair at one time
 
@@ -90,8 +93,8 @@ p.threshold <- 0.05   ##define threshold for filtering
 library(DESeq2)
 
 ##dds <- DESeqDataSetFromMatrix(countData = rawcount, colData = anno, design = ~Condition )   ##rawcount
-dds <- DESeqDataSetFromMatrix(countData = rawcount, colData = anno, design =  ~Batch+Condition )  ###USE this one if you have extra col in anno data with Batch info
-#dds = DESeq2::DESeqDataSetFromMatrix(countData = adjusted_counts, colData = anno, design = ~ Condition)  ##https://github.com/zhangyuqing/ComBat-seq/issues/7
+#dds <- DESeqDataSetFromMatrix(countData = rawcount, colData = anno, design =  ~Batch+Condition )  ###USE this one if you have extra col in anno data with Batch info
+dds = DESeq2::DESeqDataSetFromMatrix(countData = adjusted_counts, colData = anno, design = ~ Condition)  ##https://github.com/zhangyuqing/ComBat-seq/issues/7
 
 ##When considering batch effects in group design, it takes into account the mean differences across batch, 
 ##not necessarily the variance differences. ComBat-Seq is designed to address both mean and variance batch effects.
